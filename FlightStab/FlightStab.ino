@@ -779,8 +779,7 @@ const int8_t serialrx_order_TAER1a2f[rx_chan_size] = {
   SERIALRX_T, SERIALRX_A, SERIALRX_E, SERIALRX_R, SERIALRX_1, SERIALRX_a, SERIALRX_2, SERIALRX_F};
 const int8_t serialrx_order_AETR1a2f[rx_chan_size] = {
   SERIALRX_A, SERIALRX_E, SERIALRX_T, SERIALRX_R, SERIALRX_1, SERIALRX_a, SERIALRX_2, SERIALRX_F};
-const int8_t serialrx_order_TAERaf12[rx_chan_size] = {
-  SERIALRX_T, SERIALRX_A, SERIALRX_E, SERIALRX_R, SERIALRX_a, SERIALRX_F, SERIALRX_1, SERIALRX_2};
+
 
 volatile int16_t *rx_chan[rx_chan_size] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
   
