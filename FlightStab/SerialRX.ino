@@ -18,7 +18,7 @@ int8_t rshift;
 #define SBUS_OFFSET 1009 // 1009 for Futaba X8R, 1003 for Taranis FRSKY X8R, 984 for Orange R800x
 #endif
       
-#if (defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS))
+#if (defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS) || defined(SERIALRX_SUMD))
   #if defined(NANOWII)
     HardwareSerial *pSerial = &Serial1; // TODO: hardcoded for NanoWii for now
   #else
@@ -26,11 +26,35 @@ int8_t rshift;
   #endif // NANOWI
   
   //jrb add for debug  
-  #if defined(SERIAL_DEBUG) && 1
+  #if defined(SERIAL_DEBUG) && 0
     volatile int8_t RXcount;
     int8_t PrintIndex;
     uint16_t work;
-  #endif  
+  #endif
+  
+#if defined(SERIALRX_SUMD)
+  #define SUMD_BAUD		115200L
+
+  #define SUMD_START_CHAR1	0xa8
+  #define SUMD_START_CHAR2	0x01
+
+  #define SUMD_WAIT_SYNC1	0x00
+  #define SUMD_WAIT_SYNC2	0x01
+  #define SUMD_WAIT_NB_CHANNEL	0x02
+  #define SUMD_WAIT_DATA	0x03
+
+  #define POLYNOM               0x11021
+#endif
+
+#if defined(SERIALRX_SUMD) //Vars for Graupner SUMD RX Configs
+    typedef struct {
+      uint8_t state;
+      uint8_t nb_channel;
+      uint8_t dataCount;
+      uint8_t rawBuf[23] ;
+    } sumdStruct_t;
+    static sumdStruct_t sumd_data;
+#endif
 
 
   void serialrx_init()
@@ -42,12 +66,19 @@ int8_t rshift;
     #if defined (SERIALRX_SBUS)
       pSerial->begin(100000L, SERIAL_8E2);
     #endif
+    //Init Port for SUMD
+    #if defined(SERIALRX_SUMD)
+      pSerial->begin(SUMD_BAUD);
+      sumd_data.state = SUMD_WAIT_SYNC1;
+    #endif
   }
 
   bool serialrx_update()
   {
-    static uint8_t buf[25];
-    static int8_t index = 0;
+    #if !defined(SERIALRX_SUMD)         //SUMD doesn't use these
+      static uint8_t buf[25];
+      static int8_t index = 0;
+    #endif // SERIALRX_SUMD
     #if defined (SERIALRX_SBUS)
       bool sbus_return = false;
     #endif // SERIALRX_SBUS  
@@ -55,7 +86,11 @@ int8_t rshift;
   #if defined (SERIALRX_SPEKTRUM) 	// Used only for Spektrum    
     static uint32_t last_rx_time;
     uint32_t t;
-  #endif  
+  #endif
+  
+  #if defined (SERIALRX_SUMD)
+    bool sumd_return = false;
+  #endif // SERIALRX_SBUS
 
   //jrb add for debug
   #if defined(SERIAL_DEBUG) && 0
@@ -182,7 +217,7 @@ jrb*/
       }
 
   //jrb add for debug  
-    #if defined(SERIAL_DEBUG) && 1   
+    #if defined(SERIAL_DEBUG) && 0   
       if (RXcount > 100)
       {
         for (index = 0; index < 8; index++)
@@ -197,6 +232,86 @@ jrb*/
   }
   return (sbus_return); 
   #endif // SERIALRX_SBUS
+  
+  
+  #if defined (SERIALRX_SUMD)
+    #warning SERIALRX_SUMD defined // emit device name 
+        
+    #if defined(SERIAL_DEBUG) && 0
+      Serial.println("Serial Graupner SUMD 8 channels MAX!");
+    #endif
+   
+  switch (sumd_data.state) {
+    case SUMD_WAIT_SYNC1:
+      if (ch == SUMD_START_CHAR1) {
+	sumd_data.state = SUMD_WAIT_SYNC2;
+	sumd_data.dataCount = 0;
+	sumd_data.nb_channel = 0 ;
+      }
+      break;
+    case SUMD_WAIT_SYNC2:
+      if (ch == SUMD_START_CHAR2) {
+        sumd_data.state = SUMD_WAIT_NB_CHANNEL;
+      }
+      break;
+    case SUMD_WAIT_NB_CHANNEL:
+      sumd_data.nb_channel = ch * 2 + 2 ;
+      sumd_data.state = SUMD_WAIT_DATA;
+      sumd_data.dataCount = 0;
+      break;
+    case SUMD_WAIT_DATA:
+      sumd_data.rawBuf[sumd_data.dataCount++] = ch;
+      if (sumd_data.dataCount == sumd_data.nb_channel ) {
+        sumd_data.state = SUMD_WAIT_SYNC1;
+        sumd_return = sumdDecode();
+      }
+      break;
+    default:
+      sumd_data.state = SUMD_WAIT_SYNC1;
+      break;
+   }
+ }
+ return(sumd_return);
+ #endif // SERIALRX_SUMD
 }
-#endif // SERIALRX_SPEKTRUM) || SERIALRX_SBUS 
 
+
+#if defined (SERIALRX_SUMD)
+boolean sumdDecode(void) {
+  // calculate CRC16 XMODEM
+  int crc = 0xA604 ;                                            /* CRC of three first bytes = A8 01 08 (header: two byte, nbr channels: one byte) */
+  for (int num=0; num < sumd_data.nb_channel - 2  ; num++) {    /* Step through bytes in memory */
+    crc = crc ^ (sumd_data.rawBuf[num] << 8);                   /* Fetch byte from memory, XOR into CRC top byte*/
+    for (int i=0; i<8; i++) {                                   /* Prepare to rotate 8 bits */
+       if (crc & 0x8000)                                        /* b15 is set... */
+         crc = (crc << 1) ^ POLYNOM;                            /* rotate and XOR with XMODEM polynomic */
+       else                                                     /* b15 is clear... */
+         crc = crc << 1;              			        /* just rotate */
+     }                                                          /* Loop for 8 bits */
+  }
+  int sumd_crc = ( sumd_data.rawBuf[16] << 8 ) + sumd_data.rawBuf[17] ;
+  /*  @100% Min 1100ms->8800, Mid 1500ms->12000, Max 1900ms->15200  */
+  /*  @50%  Min 1300, Mid 1500, Max 1700  */
+  /*  @150% Min  900, Mid 1500, Max 2100  */
+  //serialrx_order: R E T A 1 a 2 f
+  //                0 1 2 3 4 5 6 7
+  if (crc == sumd_crc) {     
+    volatile int16_t **p = rx_chan;
+    *p[2] = ( int16_t ) ( ( ( sumd_data.rawBuf[0] << 8 ) + sumd_data.rawBuf[1] ) >> 3 );    //Throttle S1
+    *p[3] = ( int16_t ) ( ( ( sumd_data.rawBuf[2] << 8 ) + sumd_data.rawBuf[3] ) >> 3 );    //Aileron  S2
+    *p[1] = ( int16_t ) ( ( ( sumd_data.rawBuf[4] << 8 ) + sumd_data.rawBuf[5] ) >> 3 );    //Elevator S3
+    *p[0] = ( int16_t ) ( ( ( sumd_data.rawBuf[6] << 8 ) + sumd_data.rawBuf[7] ) >> 3 );    //Rudder   S4
+    *p[5] = ( int16_t ) ( ( ( sumd_data.rawBuf[8] << 8 ) + sumd_data.rawBuf[9] ) >> 3 );    //Aileron  S5
+    *p[7] = ( int16_t ) ( ( ( sumd_data.rawBuf[10] << 8 ) + sumd_data.rawBuf[11] ) >> 3 );  //Flaps    S6
+    *p[4] = ( int16_t ) ( ( ( sumd_data.rawBuf[12] << 8 ) + sumd_data.rawBuf[13] ) >> 3 );  //Extra1   S7
+    *p[6] = ( int16_t ) ( ( ( sumd_data.rawBuf[14] << 8 ) + sumd_data.rawBuf[15] ) >> 3 );  //Extra2   S8
+    return true;
+  }
+  else {
+    /* CRC Error */
+    return false;
+  }
+}
+#endif // SERIALRX_SUMD
+
+#endif // SERIALRX_SPEKTRUM || SERIALRX_SBUS || SERIALRX_SUMD 
