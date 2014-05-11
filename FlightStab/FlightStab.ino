@@ -29,11 +29,13 @@ bool ow_loop(); // OneWireSerial.ino
 //#define MINI_MWC
 //#define MINI_MWC_EXTERNAL_RX  //Define this if using an External RX with MINI_MWC
 //#define FLIP_1_5
+//#define MINI_521
 //#define NANO_MPU6050
 
 //#define SERIALRX_CPPM // over a digital-in pin (preferably ICP)
 //#define SERIALRX_SPEKTRUM // over the serial port
 //#define SERIALRX_SBUS // over the serial port
+//#define SERIALRX_SUMD // over the serial port
 
 //#define NO_ONEWIRE // remove one-wire serial config code
 //#define NO_STICKCONFIG // remove stick config code
@@ -42,7 +44,7 @@ bool ow_loop(); // OneWireSerial.ino
 //#define DUMP_SENSORS // dump sensors through the serial port
 //#define LED_TIMING // disable LED_MSG and use LED_TIMING_START/STOP to measure timings
 
-//#define USE_I2CDEVLIB // interrupt-based wire and i2cdev libraries
+#define USE_I2CDEVLIB // interrupt-based wire and i2cdev libraries
 //#define USE_I2CLIGHT // poll-based i2c access routines
 #if !(defined(USE_I2CDEVLIB) || defined(USE_I2CLIGHT))
 #define USE_I2CLIGHT // default
@@ -411,8 +413,8 @@ bool ow_loop(); // OneWireSerial.ino
 #define GYRO_ORIENTATION(x, y, z) {gyro[0] = (-y); gyro[1] = (-x); gyro[2] = (z);}
 
 // must use one of the SERIALRX modes
-#if !defined(SERIALRX_CPPM) && !defined(SERIALRX_SPEKTRUM) && !defined(SERIALRX_SBUS)
-#error "MINI_MWC must use one of SERIALRX_CPPM or SERIALRX_SPEKTRUM or SERIALRX_SBUS"
+#if !defined(SERIALRX_CPPM) && !defined(SERIALRX_SPEKTRUM) && !defined(SERIALRX_SBUS) && !defined(SERIALRX_SUMD)
+#error "MINI_MWC must use one of SERIALRX_CPPM or SERIALRX_SPEKTRUM or SERIALRX_SBUS or SERIALRX_SUMD"
 #endif
 
 // CPPM from external/internal RX
@@ -444,7 +446,7 @@ bool ow_loop(); // OneWireSerial.ino
  PB1 9/D9   ELE_OUT (PWM)   PC1 15/A1 THR_OUT 	     PD1 1/D1 (TXD)
  PB2 10/D10 AIL_OUT (PWM)   PC2 16/A2 FLP_OUT        PD2 2/D2 CPPM_IN
  PB3 11/D11 AILR_OUT (PWM)  PC3 17/A3 no connection  PD3 3/D3 RUD_OUT (PWM)
- PB4 12/D12 AUX_IN				  PC4 18/A4 (SDA)          PD4 4/D4 AIL_IN
+ PB4 12/D12 AUX_IN          PC4 18/A4 (SDA)          PD4 4/D4 AIL_IN
  PB5 13/D13 LED (SCK)       PC5 19/A5 (SCL)          PD5 5/D5 RUD_IN (PWM)
  PB6 14/D14 (XTAL1)         PC6 (RESET)              PD6 6/D6 ELE_IN (PWM)
  PB7 15/D15 (XTAL2)                                  PD7 7/D7 AILR_IN
@@ -490,6 +492,64 @@ bool ow_loop(); // OneWireSerial.ino
 
 #endif // defined(FLIP_1_5)
 /* FLIP_1_5 ****************************************************************************************************/
+
+
+/* ARDUINO MINI+GY-521 *****************************************************************************************/
+#if defined(MINI_521)
+#warning MINI_521 defined // emit device name
+/*
+ ARDUINO MINI+GY-521
+ PB0 8/D8   no connection   PC0 14/A0 One-Wire       PD0 0/D0 (RXD)
+ PB1 9/D9   ELE_OUT (PWM)   PC1 15/A1 THR_OUT 	     PD1 1/D1 (TXD)
+ PB2 10/D10 AIL_OUT (PWM)   PC2 16/A2 FLP_OUT        PD2 2/D2 CPPM_IN
+ PB3 11/D11 AILR_OUT (PWM)  PC3 17/A3 AIL_GAIN       PD3 3/D3 RUD_OUT (PWM)
+ PB4 12/D12 AUX_IN          PC4 18/A4 (SDA)          PD4 4/D4 AIL_IN
+ PB5 13/D13 LED (SCK)       PC5 19/A5 (SCL)          PD5 5/D5 RUD_IN (PWM)
+ PB6 14/D14 (XTAL1)         PC6 (RESET)              PD6 6/D6 ELE_IN (PWM)
+ PB7 15/D15 (XTAL2)         A6  ELE_GAIN             PD7 7/D7 AILR_IN
+                            A7  RUD_GAIN
+ SERIALRX
+ PD2 D2 CPPM_IN 
+*/
+
+#define DEVICE_ID DEVICE_ARDUINO_MINI_GY_521
+
+// <VR>
+//#define AIN_PORTC {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}
+#define AIN_PORTC {NULL, NULL, NULL, &ail_vr, NULL, NULL, &ele_vr, &rud_vr}
+
+// <RX> (must in PORT B/D due to ISR)
+#define RX_PORTB {NULL, NULL, NULL, NULL, &aux_in, NULL, NULL, NULL}
+#define RX_PORTD {NULL, NULL, NULL, NULL, &ail_in, &rud_in, &ele_in, &ailr_in}
+
+// <SWITCH>
+#define DIN_PORTB {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}
+#define DIN_PORTC {NULL, &dummy_sw, NULL, NULL, NULL, NULL, NULL, NULL}
+#define DIN_PORTD {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}
+
+// <SERVO>
+#define PWM_CHAN_PIN {3, 9, 15, 10, -1, 11, -1, 16} // RETA1a2F
+#define PWM_CHAN_PIN_SERIALRX PWM_CHAN_PIN // same pwm output list
+
+// <IMU>
+#define USE_MPU6050
+#define GYRO_ORIENTATION(x, y, z) {gyro[0] = (-y); gyro[1] = (-x); gyro[2] = (z);} 
+
+#define CPPM_PROFILE CPPM_PROFILE_PD2 // internal RX
+
+
+// LED
+#define LED_PROFILE LED_PROFILE_PB5
+
+// one-wire port
+#define OW_PROFILE OW_PROFILE_PC0
+
+// eeprom clear pins. shorted on init means to clear eeprom
+#define EEPROM_RESET_OUT_PIN 6
+#define EEPROM_RESET_IN_PIN 5
+
+#endif // MINI_521
+/* ARDUINO MINI+GY-521 *****************************************************************************************/
 
 /* NANO_MPU6050 ************************************************************************************************/
 #if defined(NANO_MPU6050)
@@ -542,13 +602,14 @@ bool ow_loop(); // OneWireSerial.ino
 #endif
 
 // verify not more than one serialrx_* mode defined
-#if (defined(SERIALRX_CPPM) && (defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS))) || \
-    (defined(SERIALRX_SPEKTRUM) && (defined(SERIALRX_CPPM) || defined(SERIALRX_SBUS))) || \
-    (defined(SERIALRX_SBUS) && (defined(SERIALRX_CPPM) || defined(SERIALRX_SPEKTRUM)))
-#error Cannot define mode than one SERIALRX_* mode (CPPM/SPEKTRUM/SBUS)
+#if (defined(SERIALRX_CPPM) && (defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS) || defined(SERIALRX_SUMD))) || \
+    (defined(SERIALRX_SPEKTRUM) && (defined(SERIALRX_CPPM) || defined(SERIALRX_SBUS) || defined(SERIALRX_SUMD))) || \
+    (defined(SERIALRX_SBUS) && (defined(SERIALRX_CPPM) || defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SUMD))) || \
+    (defined(SERIALRX_SUMD) && (defined(SERIALRX_CPPM) || defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS)))
+#error Cannot define mode than one SERIALRX_* mode (CPPM/SPEKTRUM/SBUS/SUMD)
 #endif
 
-#if defined(SERIALRX_CPPM) || defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS)
+#if defined(SERIALRX_CPPM) || defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS) || defined(SERIALRX_SUMD)
 #define SERIALRX_ENABLED
 #endif
 
@@ -718,6 +779,8 @@ const int8_t serialrx_order_TAER1a2f[rx_chan_size] = {
   SERIALRX_T, SERIALRX_A, SERIALRX_E, SERIALRX_R, SERIALRX_1, SERIALRX_a, SERIALRX_2, SERIALRX_F};
 const int8_t serialrx_order_AETR1a2f[rx_chan_size] = {
   SERIALRX_A, SERIALRX_E, SERIALRX_T, SERIALRX_R, SERIALRX_1, SERIALRX_a, SERIALRX_2, SERIALRX_F};
+const int8_t serialrx_order_TAERaf12[rx_chan_size] = {
+  SERIALRX_T, SERIALRX_A, SERIALRX_E, SERIALRX_R, SERIALRX_a, SERIALRX_F, SERIALRX_1, SERIALRX_2};
 
 volatile int16_t *rx_chan[rx_chan_size] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
   
@@ -984,7 +1047,8 @@ uint8_t i2c_read_reg(uint8_t addr, uint8_t reg)
   i2c_start(addr << 1); // write reg
   i2c_write(reg);
   i2c_start((addr << 1) | 1); // read data
-  return i2c_read(true);
+  //jrb return i2c_read(true);
+  return i2c_read(false);
 }
 
 void i2c_read_buf(uint8_t addr, uint8_t *buf, int8_t size)
@@ -1060,8 +1124,11 @@ void itg3205_read_gyro(int16_t *gx, int16_t *gy, int16_t *gz)
 /***************************************************************************************************************
  * ANALOG IN (VR)
  ***************************************************************************************************************/
-
+#if defined(MINI_521)
+const int8_t adc_portc_size = 8; //using pins A3, A6, A7
+#else
 const int8_t adc_portc_size = 6;
+#endif
 volatile uint8_t *adc_portc[adc_portc_size] = AIN_PORTC;
 
 void start_adc(uint8_t ch)
@@ -1938,7 +2005,7 @@ void dump_sensors()
   while (true) {
     t = micros1();
 
-#if defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS)
+#if defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS) || defined(SERIALRX_SUMD)
     if (serialrx_update())
       rx_frame_sync = true;
 #endif 
@@ -2003,19 +2070,19 @@ void dump_sensors()
     }   
 
     Serial.print("MISC "); 
-    Serial.print(i2c_errors); Serial.print(' ');
-    Serial.print(cfg.wing_mode); Serial.print(' ');
-    Serial.print(wing_mode); Serial.print(' ');
-    Serial.print(cfg.mixer_epa_mode); Serial.print(' ');
+    Serial.print(i2c_errors); Serial.print(' ');          //All OK  -> 0
+    Serial.print(cfg.wing_mode); Serial.print(' ');       //Default -> 5 WING_RUDELE_2AIL
+    Serial.print(wing_mode); Serial.print(' ');           //Default -> 5 WING_RUDELE_2AIL
+    Serial.print(cfg.mixer_epa_mode); Serial.print(' ');  //Default -> 1 MIXER_EPA_FULL
     for (int8_t i=0; i<rx_chan_size; i++)
-      Serial.print(cfg.serialrx_order[i]); 
+      Serial.print(cfg.serialrx_order[i]);                //01234567
     Serial.print(' ');
-    Serial.print(cfg.mount_orient); Serial.print(' ');
-    Serial.print(get_free_sram()); Serial.print(' ');
-    Serial.print(servo_out); Serial.print(' ');
+    Serial.print(cfg.mount_orient); Serial.print(' ');    //Default -> 1 MOUNT_NORMAL
+    Serial.print(get_free_sram()); Serial.print(' ');     //1040... (my case)
+    Serial.print(servo_out); Serial.print(' ');           //Varying from 1000 to 2000
     Serial.println();
 
-    set_led(LED_INVERT);
+    set_led(LED_INVERT);                                  //Blinking... what did you expect?
     delay1(50);
   }
 }
@@ -2183,7 +2250,7 @@ void stick_config(struct _stick_zone *psz)
       last_servo_update_time = t;
     }
 
-#if (defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS))
+#if (defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS) || defined(SERIALRX_SUMD))
     if (serialrx_update()) {
       rx_frame_sync = true;
   }
@@ -2254,11 +2321,11 @@ void setup()
     set_led_msg(2, 20, LED_VERY_SHORT); 
 
 #if defined(SERIAL_DEBUG) || defined(DUMP_SENSORS)
-#if (defined(SERIALRX_SBUS) || defined(SERIALRX_SPEKTRUM))
-  serialrx_init();
-#else  
-  Serial.begin(115200L);
-#endif // (defined(SERIALRX_SBUS) || defined(SERIALRX_SPEKTRUM)) 
+ #if (defined(SERIALRX_SBUS) || defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SUMD))
+   serialrx_init();
+ #else  
+   Serial.begin(115200L);
+ #endif // SERIALRX_SBUS || SERIALRX_SPEKTRUM || SERIALRX_SUMD 
 #endif
 
 #if defined(SERIAL_DEBUG) && 0 
@@ -2272,11 +2339,17 @@ void setup()
   wdt_disable();
 #endif // __AVR_ATmega168__ || __AVR_ATmega328P__
 
-#if defined(NANO_WII) || defined(MINI_MWC)
+#if defined(NANO_WII) || defined(MINI_MWC) || defined(FLIP_1_5)
   // set up default parameters for No DIPSW and No POT
   cfg.wing_mode = WING_RUDELE_2AIL;
   for (i=0; i<3; i++) {
     cfg.vr_gain[i] = 60;  
+  }
+#elif defined(MINI_521)
+  // set up default parameters for No DIPSW, but we have pots!!!
+  cfg.wing_mode = WING_RUDELE_2AIL;
+  for (i=0; i<3; i++) {
+    cfg.vr_gain[i] = vr_gain_use_pot;  
   }
 #else
   // set up default parameters  
@@ -2287,7 +2360,7 @@ void setup()
 #endif
   cfg.mixer_epa_mode = MIXER_EPA_FULL;
   
-#if (defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS))
+#if (defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS) || defined(SERIALRX_SUMD))
   cfg.servo_frame_rate = 20; // safe rate for analog servos
 #else
   cfg.servo_frame_rate = 0; // no min interval, rx will drive the update rate
@@ -2304,6 +2377,8 @@ void setup()
   pserialrx_order = serialrx_order_TAER1a2f;
 #elif defined(SERIALRX_SBUS)
   pserialrx_order = serialrx_order_AETR1a2f;
+#elif defined(SERIALRX_SUMD)
+  pserialrx_order = serialrx_order_RETA1a2f;;
 #else
   pserialrx_order = serialrx_order_RETA1a2f;
 #endif
@@ -2423,7 +2498,7 @@ void setup()
   // TIMSK0 &= ~(1 << TOIE0); // disable overflow interrupt
 
 #if !defined(SERIAL_DEBUG) && !defined(DUMP_SENSORS)
-#if (defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS))
+#if (defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS) || defined(SERIALRX_SUMD))
   serialrx_init();
 #endif
 #endif    
@@ -2514,7 +2589,7 @@ void setup()
 #endif // RX3SM
 
 #if defined(EAGLE_A3PRO) // TODO(noobee): need to verify functions
-#if !(defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS))
+#if !(defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS) || defined(SERIALRX_SUMD))
   if (cfg.wing_mode == WING_USE_DIPSW)
     wing_mode = dip_sw_to_wing_mode_map[(ele_sw ? 0 : 2) | (rud_sw ? 0 : 1)];
 #endif
@@ -2586,7 +2661,7 @@ again:
   t = micros1();
   update_led(t);
 
-#if (defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS))
+#if (defined(SERIALRX_SPEKTRUM) || defined(SERIALRX_SBUS) || defined(SERIALRX_SUMD))
   if (serialrx_update()) {
     rx_frame_sync = true;
   }
@@ -2776,5 +2851,5 @@ again:
   }
 
   goto again; // the dreaded "goto" statement :O
-#endif // DUMP_SENSORS
+#endif // !DUMP_SENSORS
 }
